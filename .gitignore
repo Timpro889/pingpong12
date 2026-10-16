@@ -1,0 +1,7 @@
+# OS / 编辑器噪声
+.DS_Store
+Thumbs.db
+*.log
+
+# Vercel 本地缓存
+.vercel
