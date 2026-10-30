@@ -114,5 +114,36 @@
     Net.dc = null; Net.pc = null; Net.role = null;
   };
 
+  /* ---------- 邀请/应答链接与扫码解析 ---------- */
+  // 主机二维码 = 一个真实链接，扫到后用浏览器打开游戏并自动进入加入流程
+  Net.offerUrl = function (code) {
+    return location.origin + location.pathname + '?offer=' + encodeURIComponent(code);
+  };
+  // 客人应答码也可转成链接（原生相机误扫到会打开游戏并提示，由游戏内扫码解析真正使用）
+  Net.answerUrl = function (code) {
+    return location.origin + location.pathname + '?answer=' + encodeURIComponent(code);
+  };
+  // 读取页面链接里的 invite 参数（打开 ?offer= 自动加入；打开 ?answer= 是误扫应答码）
+  Net.readInvite = function () {
+    try {
+      var p = new URLSearchParams(location.search);
+      var offer = p.get('offer');
+      var answer = p.get('answer');
+      if (offer) return { type: 'offer', code: offer };
+      if (answer) return { type: 'answer', code: answer };
+    } catch (e) {}
+    return null;
+  };
+  // 从扫码得到的字符串中解析出应答码：支持「应答链接」或原始房间码
+  Net.parseAnswer = function (raw) {
+    if (!raw) return null;
+    raw = String(raw).trim();
+    if (raw.indexOf('?answer=') >= 0 || raw.indexOf('&answer=') >= 0) {
+      try { return new URL(raw).searchParams.get('answer'); } catch (e) {}
+    }
+    if (/^[RG][A-Za-z0-9+/=]+$/.test(raw)) return raw;   // 原始房间码（R/G + base64）
+    return null;
+  };
+
   window.Net = Net;
 })();

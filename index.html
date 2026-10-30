@@ -92,6 +92,16 @@
   #net .step { display:none; }
   #net .step.on { display:block; }
   #net .hint2 { font-size:12px; color:#8a7a66; margin:10px 0; line-height:1.7; }
+  #net .divider { font-size:12px; color:#a8997f; margin:16px 0 6px; text-align:center; border-top:1px solid #e3d8c8; padding-top:12px; }
+  #net .qr img { width:190px; height:190px; image-rendering:pixelated; }
+  /* 主机扫码弹窗 */
+  #scan { display:none; position:fixed; inset:0; background:rgba(28,18,8,.93); z-index:60; align-items:center; justify-content:center; padding:16px; }
+  #scan.on { display:flex; }
+  #scan .panel { background:#fff; border-radius:18px; padding:18px; text-align:center; max-width:430px; width:100%; }
+  #scan video { width:100%; max-width:320px; border-radius:12px; background:#000; aspect-ratio:1/1; object-fit:cover; }
+  #scan canvas { display:none; }
+  #scan .res { font-size:20px; font-weight:700; color:#3c2a1a; margin-bottom:6px; }
+  #scan .hint2 { font-size:12px; color:#8a7a66; margin:8px 0 12px; line-height:1.6; }
   #menuNet { margin-top:8px; background:#3c2a1a; color:#fff; border:none; border-radius:999px;
     padding:10px 28px; font-size:14px; font-weight:600; box-shadow:0 3px 0 #1f130a; cursor:pointer; }
   #menuNet:active { transform:translateY(2px); box-shadow:0 1px 0 #1f130a; }
@@ -145,32 +155,62 @@
 <div id="net">
   <div class="panel">
     <div class="res">联机对战 · 局域网</div>
-    <div class="detail">同一 WiFi 下，一人「创建房间」当主机，另一人「加入房间」扫码/粘贴连接。<br>无服务器，数据只在两台设备之间直连。</div>
+    <div class="detail">同一 WiFi 下，一人「创建房间」当主机，另一人用<b>手机相机扫主机二维码</b>，会自动打开游戏并加入。无服务器，数据只在这两台设备间直连。</div>
     <div id="netMenu">
       <button class="bigBtn" id="netCreate">创建房间（主机）</button>
       <button class="bigBtn" id="netJoin">加入房间（客人）</button>
     </div>
     <div class="step" id="netCreateStep">
       <div class="res" style="font-size:17px">你是主机 · 等待客人加入</div>
-      <div class="hint2">用手机相机扫下面的二维码（或复制文字发给对方）。<br>对方加入后，把对方发来的「应答码」粘贴到下方，点完成连接。</div>
+      <div class="hint2">① 让对方用<b>手机相机</b>扫下面二维码，会自动打开游戏并加入。<br>② 对方加入后，用本机相机扫对方的「应答码」完成连接（也可手动粘贴）。</div>
       <div class="qr" id="netQr"></div>
-      <textarea id="netOfferCode" readonly placeholder="房间码（自动生成）"></textarea>
-      <textarea id="netAnswerPaste" placeholder="在此粘贴客人的应答码…"></textarea>
+      <textarea id="netOfferCode" readonly placeholder="邀请链接（自动生成）"></textarea>
+      <button class="ghostBtn" id="netCopyLink">复制邀请链接</button>
+      <div class="divider">对方加入后</div>
+      <button class="bigBtn" id="netScanAnswer">📷 扫描对方应答码</button>
+      <textarea id="netAnswerPaste" placeholder="或在此粘贴客人的应答码…"></textarea>
       <button class="bigBtn" id="netFinish">完成连接</button>
     </div>
     <div class="step" id="netJoinStep">
-      <div class="res" style="font-size:17px">你是客人 · 输入房间码</div>
-      <textarea id="netOfferPaste" placeholder="在此粘贴主机的房间码…"></textarea>
+      <div class="res" style="font-size:17px">你是客人 · 手动加入</div>
+      <div class="hint2">正常情况下请用手机相机扫主机的邀请二维码，会自动打开游戏。此页用于手动粘贴房间码。</div>
+      <textarea id="netOfferPaste" placeholder="在此粘贴主机的房间码/链接…"></textarea>
       <button class="bigBtn" id="netGenAnswer">生成应答码</button>
-      <div class="hint2" id="netJoinHint" style="display:none">让主机用相机扫这个「应答码」，或把文字发给他粘贴。</div>
+      <div class="hint2" id="netJoinHint" style="display:none">让主机用相机扫这个「应答码」（或把文字发给他）。</div>
       <div class="qr" id="netQr2" style="display:none"></div>
+      <button class="ghostBtn" id="netCopyAnswer" style="display:none">复制应答码</button>
       <textarea id="netAnswerCode" readonly style="display:none" placeholder="应答码（自动生成）"></textarea>
+    </div>
+    <div class="step" id="netInviteStep">
+      <div class="res" style="font-size:17px">收到组队邀请</div>
+      <div class="hint2" id="netInviteHint">对方邀请你加入局域网对战。点击下方加入，即可与房主握手开战。</div>
+      <button class="bigBtn" id="netAcceptInvite">加入房间</button>
+      <div class="hint2" id="netInviteDone" style="display:none">已生成你的「应答码」，请让<b>主机用相机扫</b>下面的二维码（或把文字发给他），握手即完成。</div>
+      <div class="qr" id="netQr3" style="display:none"></div>
+      <button class="ghostBtn" id="netCopyAnswerLink" style="display:none">复制应答码</button>
+      <textarea id="netAnswerCode2" readonly style="display:none" placeholder="应答码（自动生成）"></textarea>
+    </div>
+    <div class="step" id="netWrongStep">
+      <div class="res" style="font-size:17px">这是「应答码」</div>
+      <div class="hint2">你扫到的是客人侧的「应答码」，不是邀请链接。<br>请回到<b>房主的游戏</b>，用里面的「扫描对方应答码」功能来扫，不要直接用相机打开。</div>
+      <button class="bigBtn" id="netWrongBack">返回首页</button>
     </div>
     <button class="ghostBtn" id="netBack">返 回</button>
   </div>
 </div>
 
+<div id="scan">
+  <div class="panel">
+    <div class="res">对准对方的应答二维码</div>
+    <div class="hint2">将客人「应答码」二维码放入画面中央，自动识别。</div>
+    <video id="scanVideo" playsinline autoplay muted></video>
+    <canvas id="scanCanvas"></canvas>
+    <button class="ghostBtn" id="scanCancel">取消</button>
+  </div>
+</div>
+
 <script src="./qrcode.js"></script>
+<script src="./jsqr.js"></script>
 <script src="./net.js"></script>
 <script>
 (function(){
@@ -1108,19 +1148,14 @@ function startPvP(role){
 
 /* ---------- 联机 UI 接线 ---------- */
 var netEl = document.getElementById('net');
-function openNet(){
-  document.getElementById('menu').style.display = 'none';
-  netEl.style.display = 'flex';
-  document.getElementById('netMenu').style.display = 'block';
-  document.getElementById('netCreateStep').classList.remove('on');
-  document.getElementById('netJoinStep').classList.remove('on');
-  document.getElementById('netOfferCode').value = '';
-  document.getElementById('netAnswerCode').value = '';
-  document.getElementById('netQr').innerHTML = '';
-  document.getElementById('netQr2').innerHTML = '';
-  document.getElementById('netJoinHint').style.display = 'none';
-  document.getElementById('netQr2').style.display = 'none';
-  document.getElementById('netAnswerCode').style.display = 'none';
+var pendingOffer = null;
+
+function copyText(t){
+  try{
+    if(navigator.clipboard && navigator.clipboard.writeText){ navigator.clipboard.writeText(t).catch(function(){}); return; }
+  }catch(e){}
+  var ta = document.createElement('textarea'); ta.value = t; document.body.appendChild(ta); ta.select();
+  try{ document.execCommand('copy'); }catch(e){} document.body.removeChild(ta);
 }
 function showCode(qrEl, codeEl, code){
   codeEl.value = code;
@@ -1130,40 +1165,164 @@ function showCode(qrEl, codeEl, code){
     catch(e){ qrEl.innerHTML = ''; }
   }
 }
-document.getElementById('menuNet').addEventListener('click', openNet);
+function netReset(){
+  ['netMenu','netCreateStep','netJoinStep','netInviteStep','netWrongStep'].forEach(function(id){
+    document.getElementById(id).classList.remove('on');
+  });
+  document.getElementById('netOfferCode').value = '';
+  document.getElementById('netAnswerCode').value = '';
+  document.getElementById('netAnswerCode2').value = '';
+  document.getElementById('netQr').innerHTML = '';
+  document.getElementById('netQr2').innerHTML = '';
+  document.getElementById('netQr3').innerHTML = '';
+  document.getElementById('netJoinHint').style.display = 'none';
+  document.getElementById('netQr2').style.display = 'none';
+  document.getElementById('netAnswerCode').style.display = 'none';
+  document.getElementById('netCopyAnswer').style.display = 'none';
+  document.getElementById('netInviteDone').style.display = 'none';
+  document.getElementById('netQr3').style.display = 'none';
+  document.getElementById('netAnswerCode2').style.display = 'none';
+  document.getElementById('netCopyAnswerLink').style.display = 'none';
+  document.getElementById('netAcceptInvite').style.display = 'block';
+  document.getElementById('netInviteHint').style.display = 'block';
+}
+function showNetPanel(){
+  document.getElementById('menu').style.display = 'none';
+  netEl.style.display = 'flex';
+  netReset();
+}
+document.getElementById('menuNet').addEventListener('click', function(){ showNetPanel(); document.getElementById('netMenu').classList.add('on'); });
+
 document.getElementById('netBack').addEventListener('click', function(){
-  Net.close(); netEl.style.display = 'none'; document.getElementById('menu').style.display = 'flex';
+  stopScanner(); Net.close(); netEl.style.display = 'none'; document.getElementById('menu').style.display = 'flex';
 });
+document.getElementById('netWrongBack').addEventListener('click', function(){
+  stopScanner(); netEl.style.display = 'none'; document.getElementById('menu').style.display = 'flex';
+});
+
+/* 主机：创建房间，二维码 = 邀请链接（扫到直接打开游戏并加入） */
 document.getElementById('netCreate').addEventListener('click', async function(){
-  document.getElementById('netMenu').style.display = 'none';
-  document.getElementById('netCreateStep').classList.add('on');
+  showNetPanel(); document.getElementById('netCreateStep').classList.add('on');
   try{
     var code = await Net.createRoom();
-    showCode(document.getElementById('netQr'), document.getElementById('netOfferCode'), code);
+    var url = Net.offerUrl(code);
+    showCode(document.getElementById('netQr'), document.getElementById('netOfferCode'), url);
   }catch(e){ alert('创建房间失败：' + e.message); }
 });
+document.getElementById('netCopyLink').addEventListener('click', function(){
+  var v = document.getElementById('netOfferCode').value;
+  if(v){ copyText(v); toast('邀请链接已复制'); }
+});
+
+/* 主机：完成连接（扫描或粘贴客人的应答码） */
+async function applyAnswer(raw){
+  var code = Net.parseAnswer(raw);
+  if(!code){ alert('未能识别应答码，请确认扫的是客人侧的「应答码」二维码'); return; }
+  try{ await Net.completeHost(code); toast('已收到应答，正在建立直连…'); }
+  catch(e){ alert('应答码无效：' + e.message); }
+}
 document.getElementById('netFinish').addEventListener('click', async function(){
   var ans = document.getElementById('netAnswerPaste').value;
-  if(!ans.trim()){ alert('请先粘贴客人的应答码'); return; }
-  try{ await Net.completeHost(ans); }catch(e){ alert('应答码无效：' + e.message); }
+  if(!ans.trim()){ alert('请先粘贴客人的应答码，或用上方相机扫描'); return; }
+  await applyAnswer(ans);
 });
+
+/* 客人（手动）：粘贴房间码生成应答码 */
 document.getElementById('netJoin').addEventListener('click', function(){
-  document.getElementById('netMenu').style.display = 'none';
-  document.getElementById('netJoinStep').classList.add('on');
+  showNetPanel(); document.getElementById('netJoinStep').classList.add('on');
 });
 document.getElementById('netGenAnswer').addEventListener('click', async function(){
   var off = document.getElementById('netOfferPaste').value;
-  if(!off.trim()){ alert('请先粘贴主机的房间码'); return; }
+  if(!off.trim()){ alert('请先粘贴主机的房间码/链接'); return; }
   try{
-    var ans = await Net.joinRoom(off);
+    var ans = await Net.joinRoom(off.trim());
     document.getElementById('netJoinHint').style.display = 'block';
     document.getElementById('netQr2').style.display = 'block';
     document.getElementById('netAnswerCode').style.display = 'block';
+    document.getElementById('netCopyAnswer').style.display = 'block';
     showCode(document.getElementById('netQr2'), document.getElementById('netAnswerCode'), ans);
   }catch(e){ alert('房间码无效：' + e.message); }
 });
+document.getElementById('netCopyAnswer').addEventListener('click', function(){
+  var v = document.getElementById('netAnswerCode').value; if(v){ copyText(v); toast('应答码已复制'); }
+});
+
+/* 客人（扫码进入）：点加入 → 生成应答码 → 让主机扫 */
+document.getElementById('netAcceptInvite').addEventListener('click', async function(){
+  if(!pendingOffer){ alert('邀请信息丢失，请重新扫描主机的邀请二维码'); return; }
+  try{
+    var ans = await Net.joinRoom(pendingOffer);
+    document.getElementById('netInviteHint').style.display = 'none';
+    document.getElementById('netAcceptInvite').style.display = 'none';
+    document.getElementById('netInviteDone').style.display = 'block';
+    document.getElementById('netQr3').style.display = 'block';
+    document.getElementById('netAnswerCode2').style.display = 'block';
+    document.getElementById('netCopyAnswerLink').style.display = 'block';
+    showCode(document.getElementById('netQr3'), document.getElementById('netAnswerCode2'), ans);
+  }catch(e){ alert('加入失败：' + e.message); }
+});
+document.getElementById('netCopyAnswerLink').addEventListener('click', function(){
+  var v = document.getElementById('netAnswerCode2').value; if(v){ copyText(v); toast('应答码已复制'); }
+});
+
+/* 主机：用本机相机扫客人的应答码 */
+document.getElementById('netScanAnswer').addEventListener('click', startScanner);
+var scanStream = null, scanRAF = 0;
+function startScanner(){
+  if(typeof jsQR === 'undefined'){ alert('当前环境不支持相机扫码，请手动粘贴客人的应答码'); return; }
+  if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){ alert('当前环境不支持相机（需 HTTPS），请手动粘贴应答码'); return; }
+  var v = document.getElementById('scanVideo');
+  document.getElementById('scan').classList.add('on');
+  navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } }).then(function(stream){
+    scanStream = stream; v.srcObject = stream; v.play();
+    scanLoop();
+  }).catch(function(err){
+    document.getElementById('scan').classList.remove('on');
+    alert('无法打开相机：' + err.message + '（请允许相机权限，或用粘贴方式）');
+  });
+}
+function stopScanner(){
+  if(scanRAF){ cancelAnimationFrame(scanRAF); scanRAF = 0; }
+  if(scanStream){ scanStream.getTracks().forEach(function(t){ t.stop(); }); scanStream = null; }
+  document.getElementById('scan').classList.remove('on');
+}
+document.getElementById('scanCancel').addEventListener('click', stopScanner);
+function scanLoop(){
+  if(!scanStream) return;
+  var v = document.getElementById('scanVideo');
+  var c = document.getElementById('scanCanvas');
+  if(v.readyState >= 2 && v.videoWidth){
+    c.width = v.videoWidth; c.height = v.videoHeight;
+    var ctx = c.getContext('2d');
+    ctx.drawImage(v, 0, 0, c.width, c.height);
+    try{
+      var img = ctx.getImageData(0, 0, c.width, c.height);
+      var res = jsQR(img.data, img.width, img.height);
+      if(res && res.data){
+        stopScanner();
+        applyAnswer(res.data);
+        return;
+      }
+    }catch(e){}
+  }
+  scanRAF = requestAnimationFrame(scanLoop);
+}
+
+/* 打开页面时的深链处理：?offer= 自动进入加入；?answer= 提示误扫 */
+(function initInvite(){
+  var inv = Net.readInvite();
+  if(!inv) return;
+  showNetPanel();
+  if(inv.type === 'offer'){
+    pendingOffer = inv.code;
+    document.getElementById('netInviteStep').classList.add('on');
+  } else if(inv.type === 'answer'){
+    document.getElementById('netWrongStep').classList.add('on');
+  }
+})();
+
 Net.onMessage = onNetMessage;
-Net.onConnected = function(role){ startPvP(role); };
+Net.onConnected = function(role){ stopScanner(); startPvP(role); };
 })();
 </script>
 </body>
