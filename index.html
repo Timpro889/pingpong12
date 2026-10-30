@@ -429,19 +429,17 @@ function applyPaddle(px, py){
   var u = unprojectPaddle(px, py);
   paddleX = u.x; paddleY = u.y; paddleZ = u.z;
 }
-function applyPaddleGuest(px, py){     // 联机客人：触摸控制远端（屏幕顶部）球拍 x
-  var s = F/(LEN - CAMZ);
-  aiX = clamp((px - cx)/s + camX, -HALF_W-9, HALF_W+9);
-}
+// 联机客人同样是「第一视角」：触摸直接控制自己的近侧球拍（与主机完全一致）。
+// 发给主机时按「绕竖轴旋转 180°」换算回主机坐标系：x_主 = -x_客（见 netSendInput）
 function onDown(x,y){
   if(AC && AC.state==='suspended') AC.resume();
   ptr.down = true; ptr.x = x; ptr.y = y; ptr.hist = [{x:x, y:y, t:performance.now()}];
-  if(netMode === 'guest') applyPaddleGuest(x,y); else applyPaddle(x,y);
+  applyPaddle(x,y);
 }
 function onMove(x,y){
   if(!ptr.down) return;
   ptr.x = x; ptr.y = y;          // 同步指针位置（球拍屏幕绘制依赖它）
-  if(netMode === 'guest') applyPaddleGuest(x,y); else applyPaddle(x,y);
+  applyPaddle(x,y);
   ptr.hist.push({x:x, y:y, t:performance.now()});
   if(ptr.hist.length > 6) ptr.hist.shift();
 }
@@ -922,8 +920,15 @@ function render(){
   // 背景：清新自然壁纸（预渲染）
   ctx.drawImage(bgCanvas, 0, 0, W, H);
 
-  drawSprite(CHARS[aiChar].img, aiX, LEN + 9, 26, true);
-  drawAiRacket();
+  if(netMode === 'ai'){
+    // 单人对战：对面是 AI 角色布布/一二
+    drawSprite(CHARS[aiChar].img, aiX, LEN + 9, 26, true);
+    drawAiRacket();
+  } else {
+    // 联机 PvP：对面是真人，只画对手那块球拍，不出现角色形象
+    var fp = proj(aiX, 0, LEN + 9);
+    drawRacketScreen(fp.x, fp.y, clamp(4.6*fp.s*0.75, 9, 30), 0, 1);
+  }
   drawTable();
   if(ball){ drawShadow(ball.x, ball.z); }
   // 玩家球拍投影（影子随高度变淡，可低于台面）
@@ -943,8 +948,7 @@ function render(){
     ctx.fillText('快挥球拍发球！', hp.x, hp.y - 26);
     ctx.globalAlpha = 1;
   }
-  if(netMode === 'guest') drawRacket(paddleX, paddleY, paddleZ, 1, 0);  // 客人：近侧（主机）球拍按接收位置绘制
-  else drawPlayerRacket();
+  drawPlayerRacket();      // 主机与客人都是第一视角：画自己手里这块近侧球拍
 }
 
 /* ================= 主循环 ================= */
@@ -1094,7 +1098,7 @@ var farVX_prev = 0;
 // 主机 → 客人 广播状态（球 + 近侧球拍 + 比分 + 阶段 + 发球方）
 function netSendState(){
   Net.send({
-    b: ball ? [+ball.x.toFixed(3), +ball.y.toFixed(3), +ball.z.toFixed(3), +ball.spin.toFixed(3), ball.red?1:0] : null,
+    b: ball ? [+ball.x.toFixed(3), +ball.y.toFixed(3), +ball.z.toFixed(3), +ball.spin.toFixed(3), ball.red?1:0, +ball.vx.toFixed(3), +ball.vz.toFixed(3)] : null,
     p: [+paddleX.toFixed(3), +paddleY.toFixed(3), +paddleZ.toFixed(3)],
     sp: scoreP, sa: scoreA, st: state, sv: server
   });
@@ -1103,23 +1107,35 @@ function netSendState(){
 function netSendInput(){
   if(Net.role !== 'guest') return;
   var now = performance.now();
-  if(now - lastInputT > 33){ lastInputT = now; Net.send({ aiX: +aiX.toFixed(3) }); }
+  // 客人自己的拍在「客人坐标系」是近端 x=paddleX；主机的 aiX 是主机坐标系里的远端拍，
+  // 两者差一个 180° 旋转 → 取反后发给主机
+  if(now - lastInputT > 33){ lastInputT = now; Net.send({ aiX: +(-paddleX).toFixed(3) }); }
 }
 // 收到网络消息
 function onNetMessage(m){
   if(netMode === 'guest'){
-    if(m.b){ if(!ball) ball = {vx:0,vy:0,vz:0,spin:0}; ball.x=m.b[0]; ball.y=m.b[1]; ball.z=m.b[2]; ball.spin=m.b[3]; ball.red=!!m.b[4]; }
+    // 视角镜像：客人站在球台另一端，等价于把整个场景绕竖轴旋转 180°
+    //   x_g = -x_h        z_g = LEN - z_h
+    //   速度 vx/vz 与旋转 spin 同理取反（左右、前后都翻转）
+    if(m.b){
+      if(!ball) ball = {vx:0,vy:0,vz:0,spin:0};
+      ball.x = -m.b[0]; ball.y = m.b[1]; ball.z = LEN - m.b[2];
+      ball.spin = -m.b[3]; ball.red = !!m.b[4];
+      ball.vx = -(m.b[5] || 0); ball.vz = -(m.b[6] || 0);
+    }
     else ball = null;
-    paddleX = m.p[0]; paddleY = m.p[1]; paddleZ = m.p[2];
-    scoreP = m.sp; scoreA = m.sa; server = m.sv; state = m.st;
+    aiX = -(m.p[0]);                            // 主机的近侧球拍 → 客人视角里「对面那块拍」
+    scoreP = m.sa; scoreA = m.sp;               // 比分对调：客人自己 = 主机视角的 A 方
+    server = (m.sv === 'P') ? 'A' : 'P';        // 发球方同样对调
+    state = m.st;
     if(m.st === 'serve'){ document.getElementById('over').style.display = 'none'; }   // 重开时收起结算
     if(m.st === 'over'){
-      var win = scoreA >= 11;
+      var win = scoreP >= 11;
       document.getElementById('overEmoji').style.display = 'none';
       document.getElementById('overEmojiFb').style.display = 'none';
       document.getElementById('overRes').textContent = win ? '🏆 你赢了！' : '惜败…';
       document.getElementById('overRes').style.color = win ? '#3b6d11' : '#a32d2d';
-      document.getElementById('overDetail').textContent = '主机 ' + scoreP + ' : ' + scoreA + ' 你';
+      document.getElementById('overDetail').textContent = '你 ' + scoreP + ' : ' + scoreA + ' 主机';
       document.getElementById('over').style.display = 'flex';
     }
     updateHUD();
@@ -1135,9 +1151,9 @@ function startPvP(role){
   paddleX = 0; paddleZ = HIT_Z; hitCd = 0; aiX = 0; aiTargetX = 0; rallyCount = 0; guestAiX = 0; farVX_prev = 0;
   aiErrBase = 5.5;
   document.getElementById('imgP').style.display = 'none';
-  document.getElementById('imgA').src = CHARS[aiChar].img.src;
-  document.getElementById('nameP').textContent = (role === 'host') ? '你' : '主机';
-  document.getElementById('nameA').textContent = (role === 'host') ? '对手' : '你';
+  document.getElementById('imgA').style.display = 'none';    // PvP 双端都是第一视角球拍，不显示角色头像
+  document.getElementById('nameP').textContent = '你';
+  document.getElementById('nameA').textContent = '对手';
   updateHUD();
   unlockVoices();
   document.getElementById('menu').style.display = 'none';
