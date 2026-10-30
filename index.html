@@ -156,20 +156,24 @@
   <div class="panel">
     <div class="res">联机对战 · 局域网</div>
     <div class="detail">同一 WiFi 下，一人「创建房间」当主机，另一人用<b>手机相机扫主机二维码</b>，会自动打开游戏并加入。无服务器，数据只在这两台设备间直连。</div>
+    <div class="hint2" id="netRelayBadge" style="display:none; color:#3b6d11; background:#eaf5e0; border-radius:10px; padding:8px; font-weight:600">✓ 已检测到本地中转：客人扫一次即可自动握手</div>
     <div id="netMenu">
       <button class="bigBtn" id="netCreate">创建房间（主机）</button>
       <button class="bigBtn" id="netJoin">加入房间（客人）</button>
     </div>
     <div class="step" id="netCreateStep">
       <div class="res" style="font-size:17px">你是主机 · 等待客人加入</div>
-      <div class="hint2">① 让对方用<b>手机相机</b>扫下面二维码，会自动打开游戏并加入。<br>② 对方加入后，用本机相机扫对方的「应答码」完成连接（也可手动粘贴）。</div>
+      <div class="hint2" id="netHintRelay" style="display:none; color:#3b6d11"><b>已启用本地中转：</b>让对方用手机相机扫下面二维码即可，会自动握手，你无需再扫应答码。</div>
+      <div class="hint2" id="netHintManual">① 让对方用<b>手机相机</b>扫下面二维码，会自动打开游戏并加入。<br>② 对方加入后，用本机相机扫对方的「应答码」完成连接（也可手动粘贴）。</div>
       <div class="qr" id="netQr"></div>
       <textarea id="netOfferCode" readonly placeholder="邀请链接（自动生成）"></textarea>
       <button class="ghostBtn" id="netCopyLink">复制邀请链接</button>
-      <div class="divider">对方加入后</div>
-      <button class="bigBtn" id="netScanAnswer">📷 扫描对方应答码</button>
-      <textarea id="netAnswerPaste" placeholder="或在此粘贴客人的应答码…"></textarea>
-      <button class="bigBtn" id="netFinish">完成连接</button>
+      <div id="netManualBlock">
+        <div class="divider">对方加入后</div>
+        <button class="bigBtn" id="netScanAnswer">📷 扫描对方应答码</button>
+        <textarea id="netAnswerPaste" placeholder="或在此粘贴客人的应答码…"></textarea>
+        <button class="bigBtn" id="netFinish">完成连接</button>
+      </div>
     </div>
     <div class="step" id="netJoinStep">
       <div class="res" style="font-size:17px">你是客人 · 手动加入</div>
@@ -1190,6 +1194,17 @@ function showNetPanel(){
   document.getElementById('menu').style.display = 'none';
   netEl.style.display = 'flex';
   netReset();
+  netUpdateRelayUI();
+}
+function netUpdateRelayUI(){
+  var has = Net.hasRelay;
+  document.getElementById('netRelayBadge').style.display = has ? 'block' : 'none';
+  // 创建房间页：有中转则隐藏「手动扫应答」区块
+  if(document.getElementById('netCreateStep').classList.contains('on')){
+    document.getElementById('netHintRelay').style.display = has ? 'block' : 'none';
+    document.getElementById('netHintManual').style.display = has ? 'none' : 'block';
+    document.getElementById('netManualBlock').style.display = has ? 'none' : 'block';
+  }
 }
 document.getElementById('menuNet').addEventListener('click', function(){ showNetPanel(); document.getElementById('netMenu').classList.add('on'); });
 
@@ -1197,16 +1212,24 @@ document.getElementById('netBack').addEventListener('click', function(){
   stopScanner(); Net.close(); netEl.style.display = 'none'; document.getElementById('menu').style.display = 'flex';
 });
 document.getElementById('netWrongBack').addEventListener('click', function(){
-  stopScanner(); netEl.style.display = 'none'; document.getElementById('menu').style.display = 'flex';
+  stopScanner(); Net.close(); netEl.style.display = 'none'; document.getElementById('menu').style.display = 'flex';
 });
 
-/* 主机：创建房间，二维码 = 邀请链接（扫到直接打开游戏并加入） */
+/* 主机：创建房间。有本地中转 → 二维码=房间链接（客人扫一次自动握手）；否则 → 手动邀请链接 */
 document.getElementById('netCreate').addEventListener('click', async function(){
   showNetPanel(); document.getElementById('netCreateStep').classList.add('on');
+  netUpdateRelayUI();
   try{
-    var code = await Net.createRoom();
-    var url = Net.offerUrl(code);
-    showCode(document.getElementById('netQr'), document.getElementById('netOfferCode'), url);
+    if(Net.hasRelay){
+      var room = await Net.createRoomRelay();
+      var base = (Net.relayInfo && Net.relayInfo.lan) ? Net.relayInfo.lan : location.origin;
+      var url = base + '/?room=' + room;
+      showCode(document.getElementById('netQr'), document.getElementById('netOfferCode'), url);
+    } else {
+      var code = await Net.createRoom();
+      var url2 = Net.offerUrl(code);
+      showCode(document.getElementById('netQr'), document.getElementById('netOfferCode'), url2);
+    }
   }catch(e){ alert('创建房间失败：' + e.message); }
 });
 document.getElementById('netCopyLink').addEventListener('click', function(){
@@ -1308,12 +1331,44 @@ function scanLoop(){
   scanRAF = requestAnimationFrame(scanLoop);
 }
 
-/* 打开页面时的深链处理：?offer= 自动进入加入；?answer= 提示误扫 */
-(function initInvite(){
+/* 探测本地中转：页面由 lan-server.js 提供服务时 /__relay 返回 {relay:true, lan, local} */
+async function detectRelay(){
+  try{
+    var r = await fetch('/__relay');
+    if(!r.ok) throw 0;
+    var j = await r.json();
+    Net.hasRelay = !!j.relay;
+    Net.relayInfo = j;
+  }catch(e){ Net.hasRelay = false; Net.relayInfo = null; }
+  return Net.hasRelay;
+}
+detectRelay();   // 提前探测，使菜单徽标在首次打开即准确
+
+/* 打开页面时的深链处理：
+   ?room=  → 本地中转自动加入（客人扫一次即连）；
+   ?offer= → 手动加入；?answer= → 误扫提示 */
+(async function initInvite(){
+  await detectRelay();
   var inv = Net.readInvite();
   if(!inv) return;
   showNetPanel();
-  if(inv.type === 'offer'){
+  if(inv.type === 'room'){
+    if(!Net.hasRelay){
+      document.getElementById('netWrongStep').classList.add('on');
+      document.getElementById('netWrongStep').querySelector('.res').textContent = '无法连接本地中转';
+      document.getElementById('netWrongStep').querySelector('.hint2').innerHTML =
+        '该链接需要配合「本地中转服务」使用。<br>请在有运行 lan-server.js 的同一局域网下，用其打印的「手机扫码」地址打开游戏。';
+      return;
+    }
+    // 自动加入：客人扫一次即可，无需再点按钮
+    document.getElementById('netInviteStep').classList.add('on');
+    document.getElementById('netAcceptInvite').style.display = 'none';
+    document.getElementById('netInviteHint').style.display = 'none';
+    document.getElementById('netInviteDone').style.display = 'block';
+    document.getElementById('netInviteDone').textContent = '正在连接房主，自动握手中…';
+    try{ await Net.joinRoomRelay(inv.code); }
+    catch(e){ alert('加入失败：' + e.message); }
+  } else if(inv.type === 'offer'){
     pendingOffer = inv.code;
     document.getElementById('netInviteStep').classList.add('on');
   } else if(inv.type === 'answer'){
@@ -1322,7 +1377,7 @@ function scanLoop(){
 })();
 
 Net.onMessage = onNetMessage;
-Net.onConnected = function(role){ stopScanner(); startPvP(role); };
+Net.onConnected = function(role){ stopScanner(); if(Net.relayClose) Net.relayClose(); startPvP(role); };
 })();
 </script>
 </body>

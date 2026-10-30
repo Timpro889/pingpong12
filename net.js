@@ -111,6 +111,7 @@
   Net.close = function () {
     try { if (Net.dc) Net.dc.close(); } catch (e) {}
     try { if (Net.pc) Net.pc.close(); } catch (e) {}
+    relayClose();
     Net.dc = null; Net.pc = null; Net.role = null;
   };
 
@@ -123,12 +124,14 @@
   Net.answerUrl = function (code) {
     return location.origin + location.pathname + '?answer=' + encodeURIComponent(code);
   };
-  // 读取页面链接里的 invite 参数（打开 ?offer= 自动加入；打开 ?answer= 是误扫应答码）
+  // 读取页面链接里的 invite 参数（?room= 本地中转自动加入；?offer= 手动；?answer= 误扫应答码）
   Net.readInvite = function () {
     try {
       var p = new URLSearchParams(location.search);
+      var room = p.get('room');
       var offer = p.get('offer');
       var answer = p.get('answer');
+      if (room) return { type: 'room', code: room };
       if (offer) return { type: 'offer', code: offer };
       if (answer) return { type: 'answer', code: answer };
     } catch (e) {}
@@ -145,5 +148,71 @@
     return null;
   };
 
+  /* ---------- 本地中转（LAN relay）模式：客人扫一次、主机自动回扫 ---------- */
+  Net.hasRelay = false;
+  Net.relayInfo = null;   // { lan, local }
+  var relayState = { room: null, role: null, es: null, onOffer: null, onAnswer: null };
+
+  function relayClose() {
+    try { if (relayState.es) relayState.es.close(); } catch (e) {}
+    relayState.es = null; relayState.room = null; relayState.role = null;
+    relayState.onOffer = null; relayState.onAnswer = null;
+  }
+  function relayPost(room, obj) {
+    return fetch(location.origin + '/signal/' + encodeURIComponent(room), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(obj)
+    });
+  }
+  function relayListen(room, role, onOffer, onAnswer) {
+    relayState.room = room; relayState.role = role;
+    relayState.onOffer = onOffer; relayState.onAnswer = onAnswer;
+    var es = new EventSource(location.origin + '/signal/' + encodeURIComponent(room));
+    relayState.es = es;
+    es.onmessage = function (ev) {
+      var m; try { m = JSON.parse(ev.data); } catch (e) { return; }
+      if (m.from === role) return;                 // 忽略自己发出的回声
+      if (m.type === 'offer' && onOffer) onOffer(m.sdp);
+      if (m.type === 'answer' && onAnswer) onAnswer(m.sdp);
+    };
+    es.onerror = function () { status('信令连接中断，请确认本地中转服务仍在运行'); };
+  }
+  function genRoomId() {
+    var s = '', a = 'abcdefghijkmnpqrstuvwxyz23456789';
+    for (var i = 0; i < 6; i++) s += a[Math.floor(Math.random() * a.length)];
+    return s;
+  }
+  // 主机：经本地中转创建房间，返回 roomId 供生成二维码；应答到达后自动完成握手
+  Net.createRoomRelay = async function () {
+    var pc = makePC();
+    var dc = pc.createDataChannel('game', { ordered: true });
+    wireChannel(dc, 'host');
+    var offer = await pc.createOffer();
+    await pc.setLocalDescription(offer);
+    await gatherComplete(pc);
+    var room = genRoomId();
+    relayListen(room, 'host', null, function (sdp) {
+      pc.setRemoteDescription({ type: 'answer', sdp: sdp })
+        .then(function () { status('已收到客人应答，正在建立直连…'); })
+        .catch(function (e) { status('应答失败：' + e.message); });
+    });
+    await relayPost(room, { from: 'host', type: 'offer', sdp: cleanSDP(pc.localDescription.sdp) });
+    return room;
+  };
+  // 客人：经本地中转加入房间，自动完成握手
+  Net.joinRoomRelay = async function (room) {
+    var got = new Promise(function (resolve) { relayListen(room, 'guest', resolve, null); });
+    var sdp = await got;                            // 等主机 offer 经中转到达
+    var pc = makePC();
+    pc.ondatachannel = function (ev) { wireChannel(ev.channel, 'guest'); };
+    await pc.setRemoteDescription({ type: 'offer', sdp: sdp });
+    var answer = await pc.createAnswer();
+    await pc.setLocalDescription(answer);
+    await gatherComplete(pc);
+    await relayPost(room, { from: 'guest', type: 'answer', sdp: cleanSDP(pc.localDescription.sdp) });
+  };
+
   window.Net = Net;
+  Net.relayClose = relayClose;   // 仅关闭信令 SSE，不影响已建立的 WebRTC 直连
 })();
