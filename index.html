@@ -72,6 +72,29 @@
     animation:rot 1.6s ease-in-out infinite; }
   @keyframes rot { 0%,25% { transform:rotate(90deg);} 60%,100% { transform:rotate(0deg);} }
   #rotate p { font-size:15px; }
+
+  /* ---------- 联机面板（局域网 PvP） ---------- */
+  #net { position:fixed; inset:0; z-index:25; display:none; align-items:center; justify-content:center;
+    background:#f6efe3; padding:22px; }
+  #net .panel { background:#fff; border:3px solid #3c2a1a; border-radius:20px; padding:24px 26px;
+    text-align:center; box-shadow:0 5px 0 #3c2a1a; max-width:430px; width:100%; }
+  #net .res { font-size:22px; font-weight:700; color:#3c2a1a; }
+  #net .detail { font-size:13px; color:#8a7a66; margin:8px 0 14px; line-height:1.7; }
+  #net .bigBtn { display:block; width:100%; margin:10px 0; background:#d85a30; color:#fff; border:none;
+    border-radius:12px; padding:13px; font-size:16px; font-weight:600; box-shadow:0 3px 0 #993c1d; cursor:pointer; }
+  #net .bigBtn:active { transform:translateY(2px); box-shadow:0 1px 0 #993c1d; }
+  #net .ghostBtn { display:block; width:100%; margin:10px 0 0; background:#fff; color:#3c2a1a;
+    border:2px solid #3c2a1a; border-radius:12px; padding:11px; font-size:15px; font-weight:600; cursor:pointer; }
+  #net textarea { width:100%; height:60px; font-size:11px; border:2px solid #3c2a1a; border-radius:10px;
+    padding:8px; resize:none; box-sizing:border-box; font-family:monospace; word-break:break-all; }
+  #net .qr { margin:10px auto; line-height:0; }
+  #net .qr img { width:190px; height:190px; image-rendering:pixelated; }
+  #net .step { display:none; }
+  #net .step.on { display:block; }
+  #net .hint2 { font-size:12px; color:#8a7a66; margin:10px 0; line-height:1.7; }
+  #menuNet { margin-top:8px; background:#3c2a1a; color:#fff; border:none; border-radius:999px;
+    padding:10px 28px; font-size:14px; font-weight:600; box-shadow:0 3px 0 #1f130a; cursor:pointer; }
+  #menuNet:active { transform:translateY(2px); box-shadow:0 1px 0 #1f130a; }
 </style>
 </head>
 <body>
@@ -102,6 +125,7 @@
       <div class="cname">对手 · 布布</div><div class="cdesc">棕熊 · 力量扣杀</div>
     </div>
   </div>
+  <button id="menuNet">联机对战（局域网）</button>
   <div class="tip">球拍<span style="color:#d85a30">全向自由移动</span>，发球也要<span style="color:#d85a30">挥拍击打</span>悬空球<br><span style="color:#d85a30">由下向上挥 = 吊球</span> · <span style="color:#d85a30">由上向下挥 = 扣杀</span> · <span style="color:#d85a30">左右快挥 = 抽球侧旋</span>，越快越猛<br>白圈 = 预测落点（台内），红圈 = 将出界；网带闪光 = 过网提示</div>
 </div>
 
@@ -118,6 +142,36 @@
 
 <div id="rotate"><div class="phone"></div><p>请竖屏游玩</p></div>
 
+<div id="net">
+  <div class="panel">
+    <div class="res">联机对战 · 局域网</div>
+    <div class="detail">同一 WiFi 下，一人「创建房间」当主机，另一人「加入房间」扫码/粘贴连接。<br>无服务器，数据只在两台设备之间直连。</div>
+    <div id="netMenu">
+      <button class="bigBtn" id="netCreate">创建房间（主机）</button>
+      <button class="bigBtn" id="netJoin">加入房间（客人）</button>
+    </div>
+    <div class="step" id="netCreateStep">
+      <div class="res" style="font-size:17px">你是主机 · 等待客人加入</div>
+      <div class="hint2">用手机相机扫下面的二维码（或复制文字发给对方）。<br>对方加入后，把对方发来的「应答码」粘贴到下方，点完成连接。</div>
+      <div class="qr" id="netQr"></div>
+      <textarea id="netOfferCode" readonly placeholder="房间码（自动生成）"></textarea>
+      <textarea id="netAnswerPaste" placeholder="在此粘贴客人的应答码…"></textarea>
+      <button class="bigBtn" id="netFinish">完成连接</button>
+    </div>
+    <div class="step" id="netJoinStep">
+      <div class="res" style="font-size:17px">你是客人 · 输入房间码</div>
+      <textarea id="netOfferPaste" placeholder="在此粘贴主机的房间码…"></textarea>
+      <button class="bigBtn" id="netGenAnswer">生成应答码</button>
+      <div class="hint2" id="netJoinHint" style="display:none">让主机用相机扫这个「应答码」，或把文字发给他粘贴。</div>
+      <div class="qr" id="netQr2" style="display:none"></div>
+      <textarea id="netAnswerCode" readonly style="display:none" placeholder="应答码（自动生成）"></textarea>
+    </div>
+    <button class="ghostBtn" id="netBack">返 回</button>
+  </div>
+</div>
+
+<script src="./qrcode.js"></script>
+<script src="./net.js"></script>
 <script>
 (function(){
 'use strict';
@@ -235,6 +289,8 @@ function showEmoji(char, res, playerWon){
 
 /* ================= 游戏状态 ================= */
 var state = 'menu';         // menu | serve | rally | point | over
+var netMode = 'ai';          // 'ai'（单人对战） | 'host'（联机主机） | 'guest'（联机客人）
+var lastInputT = 0;          // 客人侧发送球拍位置的节流计时
 var playerChar = 'yier', aiChar = 'bubu';
 var CHARS = {
   yier: { name:'一二',  img:imgYier, power:1.0,  spin:1.15 },
@@ -243,6 +299,8 @@ var CHARS = {
 var scoreP = 0, scoreA = 0, server = 'P', lastHitter = null, bounces = [];
 var ball = null, trail = [];
 var aiX = 0, aiTargetX = 0;
+var guestAiX = 0;           // 主机侧：客人球拍目标 x（来自网络）
+var farVX = 0;              // 客人侧球拍 x 速度（仅用于联机回球方向变化）
 var pointTimer = 0, serveTimer = 0, rallyCount = 0, aiErrBase = 5.5;
 var hardMode = false;                      // 困难模式：AI 接球更强 + 高频快球
 
@@ -327,15 +385,19 @@ function applyPaddle(px, py){
   var u = unprojectPaddle(px, py);
   paddleX = u.x; paddleY = u.y; paddleZ = u.z;
 }
+function applyPaddleGuest(px, py){     // 联机客人：触摸控制远端（屏幕顶部）球拍 x
+  var s = F/(LEN - CAMZ);
+  aiX = clamp((px - cx)/s + camX, -HALF_W-9, HALF_W+9);
+}
 function onDown(x,y){
   if(AC && AC.state==='suspended') AC.resume();
   ptr.down = true; ptr.x = x; ptr.y = y; ptr.hist = [{x:x, y:y, t:performance.now()}];
-  applyPaddle(x,y);
+  if(netMode === 'guest') applyPaddleGuest(x,y); else applyPaddle(x,y);
 }
 function onMove(x,y){
   if(!ptr.down) return;
   ptr.x = x; ptr.y = y;          // 同步指针位置（球拍屏幕绘制依赖它）
-  applyPaddle(x,y);
+  if(netMode === 'guest') applyPaddleGuest(x,y); else applyPaddle(x,y);
   ptr.hist.push({x:x, y:y, t:performance.now()});
   if(ptr.hist.length > 6) ptr.hist.shift();
 }
@@ -828,7 +890,7 @@ function render(){
   drawGroundFx();
   drawBall();
   // 发球提示：挥拍发球
-  if(state === 'serve' && server === 'P' && ball){
+  if(state === 'serve' && server === 'P' && ball && netMode !== 'guest'){
     var hp = proj(ball.x, ball.y, ball.z);
     ctx.globalAlpha = 0.5 + 0.5*Math.abs(Math.sin(performance.now()/300));
     ctx.fillStyle = '#3c2a1a';
@@ -837,7 +899,8 @@ function render(){
     ctx.fillText('快挥球拍发球！', hp.x, hp.y - 26);
     ctx.globalAlpha = 1;
   }
-  drawPlayerRacket();
+  if(netMode === 'guest') drawRacket(paddleX, paddleY, paddleZ, 1, 0);  // 客人：近侧（主机）球拍按接收位置绘制
+  else drawPlayerRacket();
 }
 
 /* ================= 主循环 ================= */
@@ -866,38 +929,57 @@ function loop(now){
     if(groundFx[gi].t >= 1) groundFx.splice(gi, 1);
   }
   if(state === 'serve' || state === 'rally' || state === 'point'){
-    if(state === 'serve'){
-      serveTimer -= dt;
-      if(!ball) ball = {x:0,y:8,z:HIT_Z,vx:0,vy:0,vz:0,spin:0};
-      if(server === 'P'){
-        // 球固定悬空在球台上（己方近端），必须挥拍击打才能发出
-        ball.x = 0; ball.y = 9; ball.z = 8;
-        ball.vx = 0; ball.vy = 0; ball.vz = 0;
-        var swing = Math.sqrt(padVX*padVX + padVZ*padVZ + padVY*padVY*0.5);
-        if(ptr.down && swing > 26){
-          var bp = proj(ball.x, ball.y, ball.z);
-          var pf = playerFace();
-          if(Math.hypot(bp.x - pf.x, bp.y - pf.y) < pf.r + 22){
-            doServe(clamp(swing/85, 0.35, 1));
+    if(netMode === 'guest'){
+      netSendInput();                              // 客人：不模拟，仅把本地球拍位置发给主机
+    } else {
+      // 主机 / 单人对战：本机权威模拟
+      if(state === 'serve'){
+        serveTimer -= dt;
+        if(!ball) ball = {x:0,y:8,z:HIT_Z,vx:0,vy:0,vz:0,spin:0};
+        if(server === 'P'){
+          if(netMode === 'host'){
+            // 联机主机：自动发球（简化，无需挥拍）
+            ball.x = 0; ball.y = 9; ball.z = 8;
+            ball.vx = 0; ball.vy = 0; ball.vz = 0;
+            if(serveTimer <= 0) doServe(0.6);
+          } else {
+            // 单人：挥拍发球
+            ball.x = 0; ball.y = 9; ball.z = 8;
+            ball.vx = 0; ball.vy = 0; ball.vz = 0;
+            var swing = Math.sqrt(padVX*padVX + padVZ*padVZ + padVY*padVY*0.5);
+            if(ptr.down && swing > 26){
+              var bp = proj(ball.x, ball.y, ball.z);
+              var pf = playerFace();
+              if(Math.hypot(bp.x - pf.x, bp.y - pf.y) < pf.r + 22){
+                doServe(clamp(swing/85, 0.35, 1));
+              }
+            }
           }
+        } else {
+          ball.x = aiX; ball.y = 8; ball.z = LEN - HIT_Z;
+          if(serveTimer <= 0) doServe(0.5);
         }
-      } else {
-        ball.x = aiX; ball.y = 8; ball.z = LEN - HIT_Z;
-        if(serveTimer <= 0) doServe(0.5);
       }
-    }
-    if(state === 'rally'){
-      stepBall(dt, true);
-      aiThink(dt);
-      hitCd -= dt;
-      if(ptr.down && hitCd <= 0) tryHit();   // 拍面碰到球即可击球，不必等松手
-    }
-    if(state === 'point'){
-      stepBall(dt, false);            // 得分后球继续按轨迹飞出视野
-      pointTimer -= dt;
-      if(pointTimer <= 0){
-        if(scoreP < 11 && scoreA < 11){ state = 'serve'; serveTimer = 0.8; ball = null; trail = []; }
+      if(state === 'rally'){
+        if(netMode === 'host'){
+          aiX += clamp(guestAiX - aiX, -30*dt, 30*dt);   // 平滑跟随客人球拍
+          stepBall(dt, true);
+          pvpFar(dt);                                     // 客人侧（位置式自动回球，主机执行）
+        } else {
+          stepBall(dt, true);
+          aiThink(dt);                                    // 单人 AI
+        }
+        hitCd -= dt;
+        if(ptr.down && hitCd <= 0) tryHit();               // 主机/单人：近侧挥拍击球
       }
+      if(state === 'point'){
+        stepBall(dt, false);            // 得分后球继续按轨迹飞出视野
+        pointTimer -= dt;
+        if(pointTimer <= 0){
+          if(scoreP < 11 && scoreA < 11){ state = 'serve'; serveTimer = 0.8; ball = null; trail = []; }
+        }
+      }
+      if(netMode === 'host') netSendState();                // 主机：向客人广播状态
     }
   }
   render();
@@ -936,13 +1018,152 @@ document.getElementById('diffHard').addEventListener('click', function(){
   document.getElementById('diffNormal').classList.remove('sel');
 });
 document.getElementById('againBtn').addEventListener('click', function(){
-  startGame(aiChar);                        // 同对手同难度直接重开
+  if(netMode === 'guest'){ if(Net.dc) Net.send({rematch:1}); }   // 客人：请求主机重开
+  else if(netMode === 'host'){ startPvP('host'); }              // 主机：直接重开并广播
+  else { startGame(aiChar); }                                   // 单人对战：同对手同难度重开
 });
 document.getElementById('menuBtn').addEventListener('click', function(){
   document.getElementById('over').style.display = 'none';
+  if(netMode !== 'ai'){ Net.close(); netMode = 'ai'; }
   document.getElementById('menu').style.display = 'flex';
   state = 'menu';
 });
+
+/* ================= 联机对战（局域网 PvP，WebRTC 直连） ================= */
+// 客人侧球拍（位置式自动回球，由主机侧执行）：球落到客人半区且球拍到位即回击
+function pvpFar(dt){
+  farVX = (aiX - (typeof farVX_prev !== 'undefined' ? farVX_prev : aiX)) / Math.max(dt, 1e-3);
+  farVX_prev = aiX;
+  if(ball && ball.vz > 0 && bounces.indexOf('A') >= 0 &&
+     ball.z > NET_Z + 0.6 && ball.z < LEN + 14 && ball.y < 20){
+    if(Math.abs(aiX - ball.x) < 9){
+      var tx = clamp(ball.x + (aiX - ball.x)*1.15, -(HALF_W-2), HALF_W-2);
+      var tz = 12 + Math.random()*12;
+      var T = 0.58 + Math.random()*0.16;
+      var spin = clamp((aiX - ball.x)*0.12, -3.5, 3.5);
+      lastHitter = 'A'; aiLaunch(tx, tz, T, spin);
+      sfx.hit();
+    }
+  }
+}
+var farVX_prev = 0;
+// 主机 → 客人 广播状态（球 + 近侧球拍 + 比分 + 阶段 + 发球方）
+function netSendState(){
+  Net.send({
+    b: ball ? [+ball.x.toFixed(3), +ball.y.toFixed(3), +ball.z.toFixed(3), +ball.spin.toFixed(3), ball.red?1:0] : null,
+    p: [+paddleX.toFixed(3), +paddleY.toFixed(3), +paddleZ.toFixed(3)],
+    sp: scoreP, sa: scoreA, st: state, sv: server
+  });
+}
+// 客人 → 主机 发送本地球拍位置
+function netSendInput(){
+  if(Net.role !== 'guest') return;
+  var now = performance.now();
+  if(now - lastInputT > 33){ lastInputT = now; Net.send({ aiX: +aiX.toFixed(3) }); }
+}
+// 收到网络消息
+function onNetMessage(m){
+  if(netMode === 'guest'){
+    if(m.b){ if(!ball) ball = {vx:0,vy:0,vz:0,spin:0}; ball.x=m.b[0]; ball.y=m.b[1]; ball.z=m.b[2]; ball.spin=m.b[3]; ball.red=!!m.b[4]; }
+    else ball = null;
+    paddleX = m.p[0]; paddleY = m.p[1]; paddleZ = m.p[2];
+    scoreP = m.sp; scoreA = m.sa; server = m.sv; state = m.st;
+    if(m.st === 'serve'){ document.getElementById('over').style.display = 'none'; }   // 重开时收起结算
+    if(m.st === 'over'){
+      var win = scoreA >= 11;
+      document.getElementById('overEmoji').style.display = 'none';
+      document.getElementById('overEmojiFb').style.display = 'none';
+      document.getElementById('overRes').textContent = win ? '🏆 你赢了！' : '惜败…';
+      document.getElementById('overRes').style.color = win ? '#3b6d11' : '#a32d2d';
+      document.getElementById('overDetail').textContent = '主机 ' + scoreP + ' : ' + scoreA + ' 你';
+      document.getElementById('over').style.display = 'flex';
+    }
+    updateHUD();
+  } else {
+    if(m.aiX !== undefined) guestAiX = m.aiX;       // 主机接收客人球拍
+    if(m.rematch) startPvP('host');                  // 客人请求再来一局
+  }
+}
+// 开始联机对局
+function startPvP(role){
+  netMode = role; aiChar = 'bubu';
+  scoreP = 0; scoreA = 0; server = 'P'; ball = null; trail = [];
+  paddleX = 0; paddleZ = HIT_Z; hitCd = 0; aiX = 0; aiTargetX = 0; rallyCount = 0; guestAiX = 0; farVX_prev = 0;
+  aiErrBase = 5.5;
+  document.getElementById('imgP').style.display = 'none';
+  document.getElementById('imgA').src = CHARS[aiChar].img.src;
+  document.getElementById('nameP').textContent = (role === 'host') ? '你' : '主机';
+  document.getElementById('nameA').textContent = (role === 'host') ? '对手' : '你';
+  updateHUD();
+  unlockVoices();
+  document.getElementById('menu').style.display = 'none';
+  document.getElementById('net').style.display = 'none';
+  document.getElementById('over').style.display = 'none';
+  document.getElementById('hud').style.display = 'flex';
+  document.getElementById('hint').style.display = 'block';
+  setTimeout(function(){ document.getElementById('hint').style.display = 'none'; }, 5000);
+  state = 'serve'; serveTimer = 0.8; ball = null;
+  toast(role === 'host' ? '房间已就绪，开球！' : '已连接，开球！');
+}
+
+/* ---------- 联机 UI 接线 ---------- */
+var netEl = document.getElementById('net');
+function openNet(){
+  document.getElementById('menu').style.display = 'none';
+  netEl.style.display = 'flex';
+  document.getElementById('netMenu').style.display = 'block';
+  document.getElementById('netCreateStep').classList.remove('on');
+  document.getElementById('netJoinStep').classList.remove('on');
+  document.getElementById('netOfferCode').value = '';
+  document.getElementById('netAnswerCode').value = '';
+  document.getElementById('netQr').innerHTML = '';
+  document.getElementById('netQr2').innerHTML = '';
+  document.getElementById('netJoinHint').style.display = 'none';
+  document.getElementById('netQr2').style.display = 'none';
+  document.getElementById('netAnswerCode').style.display = 'none';
+}
+function showCode(qrEl, codeEl, code){
+  codeEl.value = code;
+  qrEl.innerHTML = '';
+  if(window.qrcode){
+    try{ var qr = window.qrcode(0, 'M'); qr.addData(code); qr.make(); qrEl.innerHTML = qr.createImgTag(4, 8); }
+    catch(e){ qrEl.innerHTML = ''; }
+  }
+}
+document.getElementById('menuNet').addEventListener('click', openNet);
+document.getElementById('netBack').addEventListener('click', function(){
+  Net.close(); netEl.style.display = 'none'; document.getElementById('menu').style.display = 'flex';
+});
+document.getElementById('netCreate').addEventListener('click', async function(){
+  document.getElementById('netMenu').style.display = 'none';
+  document.getElementById('netCreateStep').classList.add('on');
+  try{
+    var code = await Net.createRoom();
+    showCode(document.getElementById('netQr'), document.getElementById('netOfferCode'), code);
+  }catch(e){ alert('创建房间失败：' + e.message); }
+});
+document.getElementById('netFinish').addEventListener('click', async function(){
+  var ans = document.getElementById('netAnswerPaste').value;
+  if(!ans.trim()){ alert('请先粘贴客人的应答码'); return; }
+  try{ await Net.completeHost(ans); }catch(e){ alert('应答码无效：' + e.message); }
+});
+document.getElementById('netJoin').addEventListener('click', function(){
+  document.getElementById('netMenu').style.display = 'none';
+  document.getElementById('netJoinStep').classList.add('on');
+});
+document.getElementById('netGenAnswer').addEventListener('click', async function(){
+  var off = document.getElementById('netOfferPaste').value;
+  if(!off.trim()){ alert('请先粘贴主机的房间码'); return; }
+  try{
+    var ans = await Net.joinRoom(off);
+    document.getElementById('netJoinHint').style.display = 'block';
+    document.getElementById('netQr2').style.display = 'block';
+    document.getElementById('netAnswerCode').style.display = 'block';
+    showCode(document.getElementById('netQr2'), document.getElementById('netAnswerCode'), ans);
+  }catch(e){ alert('房间码无效：' + e.message); }
+});
+Net.onMessage = onNetMessage;
+Net.onConnected = function(role){ startPvP(role); };
 })();
 </script>
 </body>
